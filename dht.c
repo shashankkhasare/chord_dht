@@ -116,6 +116,13 @@ void shell(){
 			}else{
 				get(command[1]);
 			}
+		}else if ( 0 == strcmp( command[0] , "finger")){
+			if ( !isConnectedToRing)
+			{
+				printf("Not connected to any ring. Either create or join one !!\n");
+			}
+			else
+				finger();
 		}else{
 			printf("Unrecognised command. How about using 'help' ? \n");
 		}
@@ -132,6 +139,7 @@ int main(int argc, char * argv[]) {
 	extern node_t NULL_NODE;
 	extern data_t NULL_DATA;
 	extern sem_t data_sem;
+	
 	sem_init(&data_sem, 0, 1);
 
 	

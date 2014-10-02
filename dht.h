@@ -379,6 +379,19 @@ void destroy_ring_rpc(){
 	exit(0);
 }
 
+void finger_rpc(int sock_fd, node_t n){
+	header_t h;
+	h.type = FINGER;
+	send(sock_fd, &h, sizeof(h), 0);
+	recv(sock_fd, &h, sizeof(h), 0);
+	if(h.type == OK){
+		if(debug) printf("finger_rpc(): Got Ok.");
+		send(sock_fd, &n, sizeof(n), 0);
+	}
+	else
+		printf("finger_rpc(): Unknown response from successor.\n");
+}
+
 /***************************** R A N G E ***************************************/
 int belongsToRange1(key_t key, interval_t interval){
 	//	[start,end)
@@ -648,12 +661,12 @@ void get(char * key)
 	h.type = GET;
 	send(sock, &h, sizeof(h), 0);
 	recv(sock, &h, sizeof(h), 0);
-	if ( h.type != OK )  {printf("Unknown response from server for PUT %u \n", h.type ) ; return -1;}
+	if ( h.type != OK )  {printf("get(): Unknown response from server for GET.\n") ; return -1;}
 	
 	send(sock, key,strlen(key) , 0);
 	
 	recv(sock, &h, sizeof(h), 0);
-	if ( h.type != OK )  {printf("Unknown response from server when key was sent while PUT %u \n", h.type ); return -1;}
+	if ( h.type != OK )  {printf("get(): Unknown response from server when key was sent.\n"); return -1;}
 	
 	recv(sock, &d, sizeof(d), 0);
 	close(sock);
@@ -687,15 +700,15 @@ void put(char * key , char * value )
 	
 	send(sock, &h, sizeof(h), 0);
 	recv(sock, &h, sizeof(h), 0);
-	if ( h.type != OK ){printf("Unknown response from server for PUT %u.\n", h.type ); return -1;}
+	if ( h.type != OK ){printf("put(): Unknown response from server for PUT.\n"); return -1;}
 	
 	send(sock, key,strlen(key) , 0);
 	recv(sock, &h, sizeof(h), 0);
-	if (h.type != OK){printf("Unknown response from server when key was sent while PUT %u.\n", h.type ); return -1;}
+	if (h.type != OK){printf("put(): Unknown response from server when key was sent.\n"); return -1;}
 	
 	send(sock, value, strlen(value) , 0);
 	recv(sock, &h, sizeof(h), 0);
-	if ( h.type != OK )  {printf("Unknown response from server when value was sent while PUT %u \n", h.type ); return -1;}
+	if ( h.type != OK )  {printf("put(): Unknown response from server when value was sent while PUT\n"); return -1;}
 	
 	printf("Put mapped to %u, %s: %d\n", hashed_key, inet_ntoa(successor.address.sin_addr) , htons(successor.address.sin_port));
 	close(sock);
@@ -721,7 +734,7 @@ void redist(){
 	h.type = REDIST;
 	send(sock_fd, &h, sizeof(h), 0);
 	recv(sock_fd, &h, sizeof(h), 0);
-	if ( h.type != OK )  {printf("Unknown response from server for PUT %u \n", h.type ) ; return;}	
+	if ( h.type != OK )  {printf("redist(): Unknown response from server %u \n", h.type ) ; return;}	
 	
 	send(sock_fd, &interval, sizeof(interval), 0);
 	
@@ -743,6 +756,12 @@ void redist(){
 	close(sock_fd);
 }
 
+void finger(){
+	extern nodeinfo_t nodeinfo;
+	int sock_fd = getSocketFromNode(nodeinfo.successor);
+	finger_rpc(sock_fd, nodeinfo.self);
+	close(sock_fd);
+}
 
 /******************************** SERVER ****************************************/
 void * serveRequest(void *arg)
@@ -829,7 +848,7 @@ void * serveRequest(void *arg)
 		
 		recv(client_sock, &interval, sizeof(interval), 0);
 		
-		printf("serveRequest():sem_wait REDIST\n");
+		if(debug) printf("serveRequest():sem_wait REDIST\n");
 		sem_wait(&data_sem);		
 		for(i=0;i<1024 && i<other_data_index; i++){
 			if(belongsToRange2(other_data[i].id , interval)){
@@ -843,15 +862,64 @@ void * serveRequest(void *arg)
 			}
 		}
 		sem_post(&data_sem);
-		printf("serveRequest():sem_post REDIST\n");
+		if(debug) printf("serveRequest():sem_post REDIST\n");
 		
 		send(client_sock, &NULL_DATA, sizeof(data_t), 0);
 		
 	}else if ( h.type == DESTROY_RING){
 		printf("Ring Destroyed \n");
 		destroy_ring_rpc();
+	}else if ( h.type == FINGER){
+		node_t n;
+		char addr1[50], addr2[50], port1[10], port2[10];
+		
+		if(debug) printf("serveRequest(): Finger request received.\n");
+		
+		h.type = OK;
+		send(client_sock, &h, sizeof(h), 0);
+		recv(client_sock, &n, sizeof(n), 0);
+		
+		sprintf(addr1, "%s", inet_ntoa(nodeinfo.self.address.sin_addr));
+		sprintf(port1, "%d", ntohs(nodeinfo.self.address.sin_port));
+		sprintf(addr2, "%s", inet_ntoa(n.address.sin_addr));
+		sprintf(port2, "%d", ntohs(n.address.sin_port));
+		
+		if(strcmp(addr1, addr2) == 0 && strcmp(port1, port2) == 0 ){
+			printf("Ring Member: %s:%s\n", addr1, port1);
+		}
+		else{
+			int sock_fd = getSocketFromNode(n);
+			h.type = FINGER_RESPONSE;
+			send(sock_fd, &h, sizeof(h), 0);
+			recv(sock_fd, &h, sizeof(h), 0);
+			if(h.type != OK){
+				printf("FINGER_RESPONSE: Unknown response from %s:%s\n", addr2, port2);
+			}
+			else{
+				send(sock_fd, &(nodeinfo.self), sizeof(node_t), 0);
+			}
+			close(sock_fd);
+			
+			sock_fd = getSocketFromNode(nodeinfo.successor);
+			finger_rpc(sock_fd, n);
+			close(sock_fd);
+		}
+		
+	}else if ( h.type == FINGER_RESPONSE){
+		node_t n;
+		char addr[50], port[10];
+		
+		h.type = OK;
+		send(client_sock, &h, sizeof(h), 0);
+		recv(client_sock, &n, sizeof(n), 0);
+		
+		sprintf(addr, "%s", inet_ntoa(n.address.sin_addr));
+		sprintf(port, "%d", ntohs(n.address.sin_port));
+		
+		printf("Ring Member: %s:%s\n", addr, port);
+		
 	}else{
-		printf("Unknown request\n" ) ; 
+		printf("serveRequest(): Unknown request\n" ) ; 
 	}
 
 	close(client_sock);

@@ -9,7 +9,8 @@
 #define NOTIFY 			 7  
 #define REDIST			 8
 #define DESTROY_RING 		 9
-
+#define FINGER 		 	10
+#define FINGER_RESPONSE	 	11
 
 typedef struct header_t{
 	int type;
