@@ -11,6 +11,9 @@
 #define DESTROY_RING 		 9
 #define FINGER 		 	10
 #define FINGER_RESPONSE	 	11
+#define DUMP		 	12
+#define DUMP_ALL		13
+#define DUMP_RESPONSE	 	14
 
 typedef struct header_t{
 	int type;

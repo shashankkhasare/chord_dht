@@ -42,27 +42,25 @@ typedef struct hash_table_t{
 	char *values[50];
 }hash_table_t;
 
-typedef struct nodeinfo_t 
-{
-	node_t self;
-	node_t successor;
-	node_t predecessor;
-	finger_t finger[M+1];
-	hash_table_t hash_table;
-
-}nodeinfo_t ; 
-
 typedef struct data{
 	key_t id;
 	char key[1024];
 	char value[1024];
 }data_t;
 
-data_t self_data[1024];
-data_t other_data[1024];
+typedef struct nodeinfo_t 
+{
+	node_t self;
+	node_t successor;
+	node_t predecessor;
+	finger_t finger[M+1];
+	int self_data_index;
+	int other_data_index;
+	data_t self_data[1024];
+	data_t other_data[1024];
+}nodeinfo_t ; 
+
 data_t NULL_DATA;
-int self_data_index = 0;
-int other_data_index = 0;
 
 void print_finger_table(nodeinfo_t * );
 void startServer();
@@ -85,9 +83,9 @@ data_t * search(char *key){
 	int i;
 	extern nodeinfo_t nodeinfo;
 	if(hashed_key == nodeinfo.self.key)
-		Where = self_data;
+		Where = nodeinfo.self_data;
 	else
-		Where = other_data;	
+		Where = nodeinfo.other_data;	
 	for(i = 0; i<1024; i++)	
 		if(Where[i].id == hashed_key && strcmp(Where[i].key, key) == 0)
 			return &(Where[i]);
@@ -95,6 +93,7 @@ data_t * search(char *key){
 } 
 
 void insert(data_t * Where, data_t d){
+	extern nodeinfo_t nodeinfo;
 	int *index;
 	data_t *k = search(d.key);
 	if(k -> id != NULL_DATA.id){
@@ -102,20 +101,21 @@ void insert(data_t * Where, data_t d){
 		return;
 	}	
 	
-	if(Where == self_data)
-		index = &self_data_index;
+	if(Where == nodeinfo.self_data)
+		index = &(nodeinfo.self_data_index);
 	else
-		index = &other_data_index;
+		index = &(nodeinfo.other_data_index);
 	Where[*index] = d;
 	*index += 1;
 }
 
 void delete_data(data_t *Where, int i){
+	extern nodeinfo_t nodeinfo;
 	int *index, j;
-	if(Where == other_data)
-		index = &other_data_index;
+	if(Where == nodeinfo.other_data)
+		index = &(nodeinfo.other_data_index);
 	else
-		index = &self_data_index;	
+		index = &(nodeinfo.self_data_index);	
 		
 	for(j = i; j < *index-1; j++)
 		Where[j] = Where[j+1];
@@ -204,6 +204,9 @@ void init_node_info(nodeinfo_t * np, char *port){
 	np -> predecessor = NULL_NODE;	
 	printf("Fetched IP address : %s:%s\n", inet_ntoa((*np).self.address.sin_addr), port);
 	printf("Hashed address %d \n", (*np).self.key);
+	
+	np->self_data_index = 0;
+	np->other_data_index = 0;
 }
 
 void print_finger_table(nodeinfo_t * np){
@@ -231,12 +234,12 @@ void print_finger_table(nodeinfo_t * np){
 	printf("Data at %u:\n",np->self.key); 	
 	
 	printf("Self Data:\n"); 	
-	for(i=0;i<self_data_index;i++)
-		print_data(self_data[i]);
+	for(i=0; i< np->self_data_index; i++)
+		print_data(np->self_data[i]);
 
 	printf("Other Data:\n"); 	
-	for(i=0;i<other_data_index;i++)
-		print_data(other_data[i]);
+	for(i=0;i< np->other_data_index; i++)
+		print_data(np->other_data[i]);
 }
 
 void print_predecessor_info(){
@@ -390,6 +393,20 @@ void finger_rpc(int sock_fd, node_t n){
 	}
 	else
 		printf("finger_rpc(): Unknown response from successor.\n");
+}
+
+void dumpall_rpc(int sock_fd, node_t n){
+	header_t h;
+	h.type = DUMP_ALL;
+	
+	send(sock_fd, &h, sizeof(h), 0);
+	recv(sock_fd, &h, sizeof(h), 0);
+	if(h.type == OK){
+		if(debug) printf("dumpall_rpc(): Got Ok.");
+		send(sock_fd, &n, sizeof(n), 0);
+	}
+	else
+		printf("dumpall_rpc(): Unknown response from successor.\n");
 }
 
 /***************************** R A N G E ***************************************/
@@ -623,9 +640,9 @@ void store(char * key, char * value ) {
 	extern nodeinfo_t nodeinfo;
 	data_t * Where, d;
 	if(hashed_key == nodeinfo.self.key)
-		Where = self_data;
+		Where = nodeinfo.self_data;
 	else
-		Where = other_data;	
+		Where = nodeinfo.other_data;	
 	
 	d.id = hashed_key;
 	bzero(&(d.key), sizeof(d.key));
@@ -763,6 +780,67 @@ void finger(){
 	close(sock_fd);
 }
 
+void dumpall(){
+	extern nodeinfo_t nodeinfo;
+	int sock_fd = getSocketFromNode(nodeinfo.successor);
+	dumpall_rpc(sock_fd, nodeinfo.self);
+	close(sock_fd);
+}
+
+void SEND(int sock_fd){
+	extern nodeinfo_t nodeinfo;
+	header_t h;
+	send(sock_fd, &(nodeinfo.self), sizeof(nodeinfo.self), 0);
+	recv(sock_fd, &h, sizeof(h), 0);
+	send(sock_fd, &(nodeinfo.successor), sizeof(nodeinfo.successor), 0);
+	recv(sock_fd, &h, sizeof(h), 0);
+	send(sock_fd, &(nodeinfo.predecessor), sizeof(nodeinfo.predecessor), 0);
+	recv(sock_fd, &h, sizeof(h), 0);
+	send(sock_fd, &(nodeinfo.finger), sizeof(nodeinfo.finger), 0);
+	recv(sock_fd, &h, sizeof(h), 0);
+	send(sock_fd, &(nodeinfo.self_data_index), sizeof(nodeinfo.self_data_index), 0);
+	recv(sock_fd, &h, sizeof(h), 0);
+	send(sock_fd, &(nodeinfo.other_data_index), sizeof(nodeinfo.other_data_index), 0);
+	recv(sock_fd, &h, sizeof(h), 0);
+	int i;
+	for(i=0; i<1024; i++){
+		send(sock_fd, &(nodeinfo.self_data[i]), sizeof(nodeinfo.self_data[i]), 0);
+		recv(sock_fd, &h, sizeof(h), 0);
+	}	
+	for(i=0; i<1024; i++){
+		send(sock_fd, &(nodeinfo.other_data[i]), sizeof(nodeinfo.other_data[i]), 0);
+		recv(sock_fd, &h, sizeof(h), 0);
+	}
+}
+
+void RECV(int sock_fd, nodeinfo_t *nodeinfo){
+	header_t h;
+	h.type = OK;
+	
+	recv(sock_fd, &(nodeinfo->self), sizeof(nodeinfo->self), 0);
+	send(sock_fd, &h, sizeof(h), 0);
+	recv(sock_fd, &(nodeinfo->successor), sizeof(nodeinfo->successor), 0);
+	send(sock_fd, &h, sizeof(h), 0);
+	recv(sock_fd, &(nodeinfo->predecessor), sizeof(nodeinfo->predecessor), 0);
+	send(sock_fd, &h, sizeof(h), 0);
+	recv(sock_fd, &(nodeinfo->finger), sizeof(nodeinfo->finger), 0);
+	send(sock_fd, &h, sizeof(h), 0);
+	recv(sock_fd, &(nodeinfo->self_data_index), sizeof(nodeinfo->self_data_index), 0);
+	send(sock_fd, &h, sizeof(h), 0);
+	recv(sock_fd, &(nodeinfo->other_data_index), sizeof(nodeinfo->other_data_index), 0);
+	send(sock_fd, &h, sizeof(h), 0);
+	
+	int i;
+	for(i=0; i<1024; i++){
+		recv(sock_fd, &(nodeinfo->self_data[i]), sizeof(nodeinfo->self_data[i]), 0);
+		send(sock_fd, &h, sizeof(h), 0);
+	}
+	
+	for(i=0; i<1024; i++){
+		recv(sock_fd, &(nodeinfo->other_data[i]), sizeof(nodeinfo->other_data[i]), 0);
+		send(sock_fd, &h, sizeof(h), 0);
+	}
+}
 /******************************** SERVER ****************************************/
 void * serveRequest(void *arg)
 {
@@ -850,14 +928,14 @@ void * serveRequest(void *arg)
 		
 		if(debug) printf("serveRequest():sem_wait REDIST\n");
 		sem_wait(&data_sem);		
-		for(i=0;i<1024 && i<other_data_index; i++){
-			if(belongsToRange2(other_data[i].id , interval)){
+		for(i=0;i<1024 && i<nodeinfo.other_data_index; i++){
+			if(belongsToRange2(nodeinfo.other_data[i].id , interval)){
 				printf("Sending data_item:\n");
-				print_data(other_data[i]);
-				send(client_sock, &(other_data[i]), sizeof(other_data[i]), 0);
+				print_data(nodeinfo.other_data[i]);
+				send(client_sock, &(nodeinfo.other_data[i]), sizeof(nodeinfo.other_data[i]), 0);
 				recv(client_sock, &h, sizeof(h), 0);
 				if(h.type != OK){printf("Redistribution is failing.\n."); break;}
-				delete_data(other_data, i);
+				delete_data(nodeinfo.other_data, i);
 				i -= 1;
 			}
 		}
@@ -918,12 +996,69 @@ void * serveRequest(void *arg)
 		
 		printf("Ring Member: %s:%s\n", addr, port);
 		
+	}else if ( h.type == DUMP_ALL){
+		node_t n;
+		char addr1[50], addr2[50], port1[10], port2[10];
+		
+		if(debug) printf("serveRequest(): Finger request received.\n");
+		
+		h.type = OK;
+		send(client_sock, &h, sizeof(h), 0);
+		recv(client_sock, &n, sizeof(n), 0);
+		
+		sprintf(addr1, "%s", inet_ntoa(nodeinfo.self.address.sin_addr));
+		sprintf(port1, "%d", ntohs(nodeinfo.self.address.sin_port));
+		sprintf(addr2, "%s", inet_ntoa(n.address.sin_addr));
+		sprintf(port2, "%d", ntohs(n.address.sin_port));
+		
+		if(strcmp(addr1, addr2) == 0 && strcmp(port1, port2) == 0 ){
+			printf("__________________________________________\n");
+			print_finger_table(&nodeinfo);
+			printf("__________________________________________\n");
+		}
+		else{
+			int sock_fd = getSocketFromNode(n);
+			h.type = DUMP_RESPONSE;
+			send(sock_fd, &h, sizeof(h), 0);
+			recv(sock_fd, &h, sizeof(h), 0);
+			if(h.type != OK){
+				printf("DUMP_RESPONSE: Unknown response from %s:%s\n", addr2, port2);
+			}
+			else{
+				SEND(sock_fd);
+			}
+			
+			recv(sock_fd, &h, sizeof(h), 0);
+			if(h.type != OK){
+				printf("DUMP_RESPONSE: Unknown response from %s:%s\n", addr2, port2);
+			}
+			close(sock_fd);
+			
+			sock_fd = getSocketFromNode(nodeinfo.successor);
+			dumpall_rpc(sock_fd, n);
+			close(sock_fd);
+		}
+		
+	}else if ( h.type == DUMP_RESPONSE){
+		nodeinfo_t n;
+		char addr[50], port[10];
+		
+		h.type = OK;
+		send(client_sock, &h, sizeof(h), 0);
+		RECV(client_sock, &n);
+		printf("__________________________________________\n");
+		print_finger_table(&n);
+		printf("__________________________________________\n");
+		h.type = OK;
+		send(client_sock, &h, sizeof(h), 0);
+		
 	}else{
 		printf("serveRequest(): Unknown request\n" ) ; 
 	}
 
 	close(client_sock);
 }
+
 void startServer(){
 	extern nodeinfo_t nodeinfo ; 
 	int sock_fd, client_sock, i = 0, addr_size, k;

@@ -104,6 +104,13 @@ void shell(){
 			print_successor_info();
 		}else if ( 0 == strcmp( command[0] , "dump")){
 			print_finger_table(&nodeinfo);
+		}else if ( 0 == strcmp( command[0] , "dumpall")){
+			if ( !isConnectedToRing)
+			{
+				printf("Not connected to any ring. Either create or join one !!\n");
+			}else{
+				dumpall();
+			}
 		}else if ( 0 == strcmp( command[0] , "get")){
 			if ( i < 2)
 			{
