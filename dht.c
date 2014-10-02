@@ -103,7 +103,13 @@ void shell(){
 		}else if ( 0 == strcmp( command[0] , "successor")){
 			print_successor_info();
 		}else if ( 0 == strcmp( command[0] , "dump")){
-			print_finger_table(&nodeinfo);
+			if ( i == 1)
+			{
+				print_finger_table(&nodeinfo);
+				continue;
+			}
+			else if ( i == 3)
+				dump(command[1], command[2]);
 		}else if ( 0 == strcmp( command[0] , "dumpall")){
 			if ( !isConnectedToRing)
 			{

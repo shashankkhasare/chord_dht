@@ -841,6 +841,32 @@ void RECV(int sock_fd, nodeinfo_t *nodeinfo){
 		send(sock_fd, &h, sizeof(h), 0);
 	}
 }
+
+void dump(char *ip, char* port){
+	int sock_fd = getSocket(ip, port);
+	header_t h;
+	nodeinfo_t n;
+	if(sock_fd == -1){
+		printf("dump(): Unable to connect to %s:%s\n", ip, port);
+		return;
+	}
+		
+	h.type = DUMP;
+	send(sock_fd, &h, sizeof(h), 0);
+	recv(sock_fd, &h, sizeof(h), 0);
+	if(h.type == OK){
+		RECV(sock_fd, &n);
+	}	
+	else{
+		printf("dump(): Unknown response from %s:%s\n", ip, port);
+		close(sock_fd);
+		return;
+	}
+	close(sock_fd);
+	printf("__________________________________________\n");
+	print_finger_table(&n);
+	printf("__________________________________________\n");
+}
 /******************************** SERVER ****************************************/
 void * serveRequest(void *arg)
 {
@@ -996,11 +1022,16 @@ void * serveRequest(void *arg)
 		
 		printf("Ring Member: %s:%s\n", addr, port);
 		
+	}else if ( h.type == DUMP){
+		if(debug) printf("serveRequest(): DUMP received.\n");
+		h.type = OK;
+		send(client_sock, &h, sizeof(h), 0);
+		SEND(client_sock);
 	}else if ( h.type == DUMP_ALL){
 		node_t n;
 		char addr1[50], addr2[50], port1[10], port2[10];
 		
-		if(debug) printf("serveRequest(): Finger request received.\n");
+		if(debug) printf("serveRequest(): DUMP_ALL request received.\n");
 		
 		h.type = OK;
 		send(client_sock, &h, sizeof(h), 0);
