@@ -6,6 +6,7 @@ nodeinfo_t nodeinfo ;
 
 int isConnectedToRing  = 0 ; 
 char port[32] = "3410";
+int server_sock;
 
 void shell(){
 	char *command[10];
@@ -65,8 +66,14 @@ void shell(){
 			if ( isConnectedToRing){
 				printf("Already connected to a ring. Can't create another one \n");
 			}else{
+				/*
 				pthread_t tid; 
 				pthread_create(&tid, NULL, create_ring , &nodeinfo);
+				*/
+
+				int tid ; 
+				tid = createWithArgs(create_ring, &nodeinfo);
+				run(tid);
 			}
 
 		}else if ( 0 == strcmp( command[0] , "join")){
@@ -143,10 +150,6 @@ void shell(){
 		command[0] = NULL;
 	}while(1);
 }
-void siginthandler(int signo)
-{
-	clean();
-}
 
 int main(int argc, char * argv[]) {
 	extern node_t NULL_NODE;
@@ -177,8 +180,17 @@ int main(int argc, char * argv[]) {
 	}
 
 	init_node_info(&nodeinfo, port);
+/*
 	signal( SIGINT , siginthandler);
+*/
+	// using mythread 
+	int tid ; 
+	tid = create(shell);
+	start();
+
+	/* using pthreads 
 	pthread_t tid; 
 	pthread_create(&tid, NULL, shell, NULL);
 	pthread_join(tid, NULL);
+	*/
 }

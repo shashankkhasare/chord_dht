@@ -15,7 +15,7 @@
 #include <errno.h>
 #include <unistd.h>
 #include "communication_structures.h"
-#include <pthread.h>
+//#include <pthread.h>
 #include <semaphore.h>
 
 #define debug	0
@@ -372,6 +372,7 @@ void notify_rpc(int sock_fd, node_t k){
 void destroy_ring_rpc(){
 	header_t h ; 
 	extern nodeinfo_t nodeinfo ; 
+	extern int server_sock; 
 	if ( nodeinfo.successor.key != NULL_NODE.key){
 
 		h.type = DESTROY_RING;
@@ -379,6 +380,7 @@ void destroy_ring_rpc(){
 		send(sock_fd, &h, sizeof(h), 0);
 		close(sock_fd);
 	}
+	close(server_sock);
 	exit(0);
 }
 
@@ -502,7 +504,8 @@ void fix_fingers(){
 void periodic(){
 	extern nodeinfo_t nodeinfo;
 	while(1){
-		sleep(1);
+		//sleep(1);
+		usleep(1000000);
 		stabilize();
 		fix_fingers();
 	}
@@ -532,10 +535,18 @@ void join_ring(char *ip , char * port){
 	if(debug) printf("join_ring(): Requesting successor to %s:%s\n", ip, port);
 	nodeinfo.successor = find_successor_rpc(sock_fd, nodeinfo.self.key);
 	close(sock_fd);
-	
+
+/*
 	pthread_t tid, tid1;
 	pthread_create(&tid, NULL, startServer, NULL);
 	pthread_create(&tid1, NULL, periodic, NULL);
+	*/
+	int tid1, tid2; 
+	tid1 = create(startServer);
+	run(tid1);
+	tid2 = create(periodic);
+	run(tid2);
+
 	
 	//print_finger_table(&nodeinfo);
 }
@@ -552,10 +563,13 @@ void create_ring(nodeinfo_t * np){
 	np -> successor = np -> self; 
 	np -> predecessor= NULL_NODE; 
 	//print_finger_table(np);
-	
+/*	
 	pthread_t tid1, tid2;
 	pthread_create(&tid1, NULL, periodic, NULL);
-	
+*/
+	int tid; 
+	tid = create ( periodic);
+	run(tid);
 	startServer();
 }
 
@@ -1092,10 +1106,11 @@ void * serveRequest(void *arg)
 
 void startServer(){
 	extern nodeinfo_t nodeinfo ; 
-	int sock_fd, client_sock, i = 0, addr_size, k;
+	extern int server_sock;
+	int  client_sock, i = 0, addr_size, k;
 	struct sockaddr_in addr, client;
 
-	if ( ( sock_fd = socket(AF_INET, SOCK_STREAM, 0) ) < 0 ){
+	if ( ( server_sock = socket(AF_INET, SOCK_STREAM, 0) ) < 0 ){
 		perror("socket() : Failed to create socket. ");
 		exit(0);
 	}
@@ -1107,25 +1122,30 @@ void startServer(){
 	if ( debug )  printf("Trying to open socket on %s : %d \n", inet_ntoa(addr.sin_addr ) , ntohs(addr.sin_port));
 	
 
-	if( bind(sock_fd, (struct sockaddr *)&addr, sizeof(addr)) < 0 ){
+	if( bind(server_sock, (struct sockaddr *)&addr, sizeof(addr)) < 0 ){
 		perror("bind() : Failed to bind. ");
 		exit(0);
 	}
 
 
-	if( listen(sock_fd, 100) < 0 ) {
+	if( listen(server_sock, 100) < 0 ) {
 		perror("Failed to listen on socket. ");
 		exit(0);
 	}
 	while(1){
-		client_sock = accept(sock_fd, (struct sockaddr *)&client, &addr_size);
+		client_sock = accept(server_sock, (struct sockaddr *)&client, &addr_size);
 
 		int * sockp = malloc(sizeof(int));
 		if ( sockp == NULL) {printf("malloc failed \n"); exit(0);}
 
 		*sockp = client_sock;
+		/*
 		pthread_t tid; 
 		pthread_create(&tid, NULL, serveRequest, sockp);
+		*/
+		int tid ; 
+		tid = createWithArgs(serveRequest, sockp);
+		run(tid);
 	}
 }
 #endif

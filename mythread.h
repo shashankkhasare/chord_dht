@@ -4,7 +4,7 @@
 #include "queue.h"
 #include<sys/time.h>
 
-#define SECOND 10000
+#define SECOND 5000
 #ifdef __x86_64__
 // code for 64 bit Intel arch
 
@@ -41,14 +41,15 @@ address_t mangle(address_t addr)
 
 #endif
 
-#define MAX_THREADS 100
-char stack[MAX_THREADS][4096];
+#define MAX_THREADS 50
+#define STACK_SIZE  65536 
+char stack[MAX_THREADS][STACK_SIZE];
 jmp_buf jbuf[MAX_THREADS];
 
 jmp_buf main_buf; 
 //int running[MAX_THREADS];
 
-char thread_pool[MAX_THREADS];
+short thread_pool[MAX_THREADS];
 int allocate_ptr= 5; 
 int isSchedulerRunning = 0; 
 
@@ -68,8 +69,8 @@ int allocate_tid(){
 			return i; 
 		}
 	}
-	clean();
 	printf("Max thread capacity exceeded \n");
+	//clean();
 	exit(0);
 }
 
@@ -120,7 +121,18 @@ void dispatch(int sig)
 			return;
 	}
 	pop(thread_queue);
-	push(thread_queue, tp);
+	
+	if ( tp -> state == FINISHED)
+	{
+		int i = tp-> thread_id; 
+		//printf("Thread deleted %d \n", i);
+		thread_pool[i] = '\0';
+		free(tp);
+	}
+	else{
+		push(thread_queue, tp);
+	}
+	//push(thread_queue, tp);
 
 	// search next thread in the queue, whose state is READY  and run it 
 	mythread * next_tp;
@@ -191,7 +203,7 @@ void launch(){
 	}
 
 	tp -> state = FINISHED;
-	delete(getID());
+	//delete(getID());
 
 	while(1);
 }
@@ -217,7 +229,7 @@ int create(void (*f) ( void )){
 	push(thread_queue, tp);
 
 	sigsetjmp(jbuf[tid],1);
-	jbuf[tid][0].__jmpbuf[JB_SP] = mangle((unsigned) stack[tid] + 4096);
+	jbuf[tid][0].__jmpbuf[JB_SP] = mangle((unsigned) stack[tid] + STACK_SIZE);
 	jbuf[tid][0].__jmpbuf[JB_PC] = mangle((unsigned) launch);
 
 	return tid; 
@@ -245,9 +257,11 @@ int createWithArgs(void* (*f) ( void *), void * arg){
 	init_stats(tp);
 
 	push(thread_queue, tp);
+//	bzero(jbuf[tid], sizeof(jmp_buf));
+//	bzero(stack[tid], STACK_SIZE);
 
 	sigsetjmp(jbuf[tid],1);
-	jbuf[tid][0].__jmpbuf[JB_SP] = mangle((unsigned) stack[tid] + 4096);
+	jbuf[tid][0].__jmpbuf[JB_SP] = mangle((unsigned) stack[tid] + STACK_SIZE);
 	jbuf[tid][0].__jmpbuf[JB_PC] = mangle((unsigned) launch);
 
 	return tid; 
@@ -278,7 +292,8 @@ void start()
 
 void sleep_t(int secs)
 {
-	ualarm(0, 0);
+	if ( isSchedulerRunning)
+		ualarm(0, 0);
 
 	time_t wt;
 	time(&wt);
@@ -286,7 +301,8 @@ void sleep_t(int secs)
 	tp -> state = SLEEPING;
 	tp -> waketime = wt + secs; 
 	(tp -> stat).total_sleep_time = secs * 1000; 
-	ualarm(5*SECOND, 5*SECOND);
+	if(isSchedulerRunning)
+		ualarm(5*SECOND, 5*SECOND);
 	kill(getpid(), SIGALRM);
 }
 
@@ -297,6 +313,7 @@ void run(int tid ){
 	else
 		perror("Thread with said thread id doesn't exist \n");
 }
+/*
 void suspend(int tid ){
 	mythread * p  = search_by_tid(thread_queue, tid)	;
 	if ( p )
@@ -314,11 +331,12 @@ void yield()
 }
 
 void delete( int tid ) {
-	ualarm(0, 0);
+	if (isSchedulerRunning)
+		ualarm(0, 0);
 	delete_from_queue(thread_queue, tid);
 	thread_pool[tid] = 0;
-	ualarm(5*SECOND, 5*SECOND);
-	kill(getpid(), SIGALRM);	
+	if ( isSchedulerRunning)
+		ualarm(5*SECOND, 5*SECOND);
 }
 
 void calculate_stats(mythread * tp ) 
@@ -375,7 +393,8 @@ void print_stat(mythread * tp )
 
 void clean(){
 
-	ualarm( 0, 0);
+	if ( isSchedulerRunning)
+		ualarm( 0, 0);
 	while(1){
 		if ( thread_queue -> front != NULL){
 			mythread * tp = front( thread_queue); 
@@ -419,4 +438,4 @@ void *GetThreadResult(int tid) {
 		}
 	}
 }
-	
+*/	
