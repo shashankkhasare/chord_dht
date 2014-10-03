@@ -3,6 +3,7 @@
 #include <signal.h>
 #include "queue.h"
 #include<sys/time.h>
+#include "thread_struct.h"
 
 #define SECOND 5000
 #ifdef __x86_64__
@@ -42,7 +43,6 @@ address_t mangle(address_t addr)
 #endif
 
 #define MAX_THREADS 50
-#define STACK_SIZE  65536 
 char stack[MAX_THREADS][STACK_SIZE];
 jmp_buf jbuf[MAX_THREADS];
 
@@ -59,7 +59,7 @@ int allocate_tid(){
 	if ( isSchedulerRunning) 
 		ualarm( 0, 0 ) ; 
 	int tid, i; 
-	for(i = allocate_ptr ; i !=  (allocate_ptr + MAX_THREADS - 1) % MAX_THREADS; i = ( i + 1 ) % MAX_THREADS){
+	for(i = (allocate_ptr + 1) % MAX_THREADS ; i !=  (allocate_ptr + MAX_THREADS ) % MAX_THREADS; i = ( i + 1 ) % MAX_THREADS){
 		if ( thread_pool[ i ] == 0)
 		{
 			allocate_ptr  = i ; 
@@ -126,7 +126,7 @@ void dispatch(int sig)
 	{
 		int i = tp-> thread_id; 
 		//printf("Thread deleted %d \n", i);
-		thread_pool[i] = '\0';
+		thread_pool[i] = 0;
 		free(tp);
 	}
 	else{
@@ -208,7 +208,8 @@ void launch(){
 	while(1);
 }
 int create(void (*f) ( void )){
-
+	if ( isSchedulerRunning)
+		ualarm( 0 , 0 ) ; 
 	if ( thread_queue == NULL){
 		thread_queue = ( queue * ) malloc(sizeof(queue));
 		queue_init(thread_queue);
@@ -218,6 +219,11 @@ int create(void (*f) ( void )){
 	//thread_pool += 1;
 	int tid = allocate_tid();
 	mythread * tp = ( mythread * ) malloc ( sizeof ( mythread ) ) ; 
+	if ( tp == NULL)
+	{
+		printf("Allocation of memory to thread failed.Exiting \n");
+		exit(0);
+	}
 	tp -> thread_id = tid;
 	tp -> hasContext = 0;
 	tp -> state = CREATED; 
@@ -229,9 +235,11 @@ int create(void (*f) ( void )){
 	push(thread_queue, tp);
 
 	sigsetjmp(jbuf[tid],1);
-	jbuf[tid][0].__jmpbuf[JB_SP] = mangle((unsigned) stack[tid] + STACK_SIZE);
+	jbuf[tid][0].__jmpbuf[JB_SP] = mangle((unsigned)  stack[tid] + STACK_SIZE );
 	jbuf[tid][0].__jmpbuf[JB_PC] = mangle((unsigned) launch);
 
+	if ( isSchedulerRunning)
+		ualarm( 5 * SECOND, 5*SECOND) ; 
 	return tid; 
 }
 
@@ -247,6 +255,10 @@ int createWithArgs(void* (*f) ( void *), void * arg){
 	//thread_pool += 1;
 	int tid = allocate_tid();
 	mythread * tp = ( mythread * ) malloc ( sizeof ( mythread ) ) ; 
+	if ( tp == NULL){
+		printf("Allocation of memory to thread failed \n");
+		exit(0);
+	}
 	tp -> thread_id = tid;
 	tp -> hasContext = 0;
 	tp -> state = CREATED; 

@@ -5,6 +5,7 @@
 #include<time.h>
 #include<sys/time.h>
 
+#define STACK_SIZE  65536 
 enum thread_state {RUNNING ,READY , SUSPENDED, FINISHED , CREATED, SLEEPING, BLOCKED_JOIN};
 
 
@@ -46,6 +47,7 @@ typedef struct mythread{
 
 	struct timeval execution_start_time; 
 	struct timeval wait_start_time; 
+	//char stack[STACK_SIZE];
 
 }mythread; 
 

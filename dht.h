@@ -1,6 +1,6 @@
 #ifndef DHT_H
 #define DHT_H
-#define M 3
+#define M 6
 #include<stdlib.h>
 #include<string.h>
 #include<sys/types.h>
